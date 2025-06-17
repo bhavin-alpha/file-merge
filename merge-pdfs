@@ -1,0 +1,134 @@
+import { useState } from "react";
+import { PDFDocument } from "pdf-lib";
+import "./styles.css";
+
+async function imagesToPdf(imageFiles) {
+  const pdfDoc = await PDFDocument.create();
+
+  for (const imageFile of imageFiles) {
+    const arrayBuffer = await imageFile.arrayBuffer();
+    let image;
+    let width;
+    let height;
+
+    if (imageFile.type === "image/jpeg" || imageFile.type === "image/jpg") {
+      image = await pdfDoc.embedJpg(arrayBuffer);
+    } else if (imageFile.type === "image/png") {
+      image = await pdfDoc.embedPng(arrayBuffer);
+    } else {
+      throw new Error("Unsupported image type");
+    }
+
+    width = image.width;
+    height = image.height;
+
+    const page = pdfDoc.addPage([width, height]);
+    page.drawImage(image, {
+      x: 0,
+      y: 0,
+      width,
+      height,
+    });
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  return pdfBytes;
+}
+
+async function mergePDFs(pdfs) {
+  // Create a new PDFDocument
+  const mergedPdf = await PDFDocument.create();
+
+  // Load first PDF
+  const pdfIntoBytes = await Promise.all(
+    pdfs.map((item) => {
+      return PDFDocument.load(item);
+    })
+  );
+
+  const pdfPages = await Promise.all(
+    pdfIntoBytes.map((item) => {
+      return mergedPdf.copyPages(item, item.getPageIndices());
+    })
+  );
+
+  pdfPages.forEach((currentPdfPages) => {
+    currentPdfPages.forEach((page) => mergedPdf.addPage(page));
+  });
+
+  console.log(pdfPages, "pdfPages");
+
+  const mergedPdfBytes = await mergedPdf.save();
+  return mergedPdfBytes;
+}
+
+const ImageToPdfComponent = () => {
+  const [pdfUrl, setPdfUrl] = useState(null);
+
+  const handleConvert = async (e) => {
+    e.preventDefault();
+
+    const files = document.getElementById("imageInput").files;
+    const fileArray = Array.from(files);
+
+    const pdfBytes = await imagesToPdf(fileArray);
+
+    const blob = new Blob([pdfBytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    setPdfUrl(url);
+  };
+
+  return (
+    <div>
+      <input
+        type="file"
+        id="imageInput"
+        multiple
+        accept="image/png, image/jpeg"
+      />
+      <button onClick={handleConvert}>Convert to PDF</button>
+
+      {pdfUrl && (
+        <a href={pdfUrl} download="images.pdf">
+          Download PDF
+        </a>
+      )}
+    </div>
+  );
+};
+
+export default function App() {
+  const [mergedUrl, setMergedUrl] = useState(null);
+
+  const handleMerge = async (e) => {
+    e.preventDefault();
+
+    const file1 = document.getElementById("pdf1").files[0];
+    const file2 = document.getElementById("pdf2").files[0];
+
+    const pdf1Bytes = await file1.arrayBuffer();
+    const pdf2Bytes = await file2.arrayBuffer();
+
+    const mergedBytes = await mergePDFs([pdf1Bytes, pdf2Bytes]);
+
+    // Create a URL to download/view the merged PDF
+    const blob = new Blob([mergedBytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    setMergedUrl(url);
+  };
+
+  return (
+    <div>
+      <input type="file" id="pdf1" accept="application/pdf" />
+      <input type="file" id="pdf2" accept="application/pdf" />
+      <button onClick={handleMerge}>Merge PDFs</button>
+
+      {mergedUrl && (
+        <a href={mergedUrl} download="merged.pdf">
+          Download Merged PDF
+        </a>
+      )}
+      <ImageToPdfComponent />
+    </div>
+  );
+}
