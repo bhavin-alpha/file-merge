@@ -1,1 +1,80 @@
-Code goes here...
+import { useState } from "react";
+import { PDFDocument } from "pdf-lib";
+
+async function convertFilesToPDF(files) {
+  const pdfDoc = await PDFDocument.create();
+
+  for (const file of files) {
+    const arrayBuffer = await file.arrayBuffer();
+
+    if (file.type === "application/pdf") {
+      const tempPdf = await PDFDocument.load(arrayBuffer);
+      const copiedPages = await pdfDoc.copyPages(
+        tempPdf,
+        tempPdf.getPageIndices()
+      );
+      copiedPages.forEach((page) => pdfDoc.addPage(page));
+    } else if (
+      file.type === "image/jpeg" ||
+      file.type === "image/jpg" ||
+      file.type === "image/png"
+    ) {
+      let image;
+      if (file.type === "image/jpeg" || file.type === "image/jpg") {
+        image = await pdfDoc.embedJpg(arrayBuffer);
+      } else {
+        image = await pdfDoc.embedPng(arrayBuffer);
+      }
+      const { width, height } = image;
+      const page = pdfDoc.addPage([width, height]);
+      page.drawImage(image, { x: 0, y: 0, width, height });
+    }
+  }
+
+  return await pdfDoc.save();
+}
+
+export default function CombinedPDFConverter() {
+  const [combinedPdfUrl, setCombinedPdfUrl] = useState(null);
+
+  const handleMerge = async (e) => {
+    e.preventDefault();
+    const files = Array.from(document.getElementById("allFilesInput").files);
+
+    // Sort to process PDFs first, then images (optional)
+    files.sort((a, b) => {
+      if (a.type === b.type) return 0;
+      return a.type === "application/pdf" ? -1 : 1;
+    });
+
+    const mergedPdfBytes = await convertFilesToPDF(files);
+    const blob = new Blob([mergedPdfBytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    setCombinedPdfUrl(url);
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>Merge PDFs and Images into One PDF</h2>
+
+      <input
+        type="file"
+        id="allFilesInput"
+        multiple
+        accept="application/pdf, image/png, image/jpeg"
+      />
+      <br />
+      <button onClick={handleMerge} style={{ marginTop: 10 }}>
+        Merge Files to PDF
+      </button>
+
+      {combinedPdfUrl && (
+        <div style={{ marginTop: 15 }}>
+          <a href={combinedPdfUrl} download="combined.pdf">
+            Download Combined PDF
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
